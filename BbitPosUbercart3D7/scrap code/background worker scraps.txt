@@ -1,0 +1,120 @@
+﻿    'ACTIONS DONE BASED ON FORM CONTROLS AND BUTTONS
+    Private Sub registerFormShown(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles MyBase.Shown
+        'SplashScreen.Show()
+        'bw.WorkerSupportsCancellation = False
+        'bw.WorkerReportsProgress = True
+        'AddHandler bw.DoWork, AddressOf bw_DoWork
+        'AddHandler bw.ProgressChanged, AddressOf bw_ProgressChanged
+        'AddHandler bw.RunWorkerCompleted, AddressOf bw_RunWorkerCompleted
+        'bw.RunWorkerAsync() 'DISABLED FOR DEVELOPMENT PURPOSES
+        Me.enterSKUTextBox.Focus() 'sets the focus to the Enter SKU textbox
+    End Sub
+
+
+
+
+	
+    'BACKGROUND WORKER STUFF DONE ON STARTUP
+    Private Sub bw_DoWork(ByVal sender As Object, ByVal e As DoWorkEventArgs)
+        ''background worker thread example 
+        ''http://msdn.microsoft.com/en-us/library/cc221403%28v=vs.95%29.aspx?cs-save-lang=1&cs-lang=vb#code-snippet-1
+
+        Dim utilsSftp As New utils_sftp
+
+        If bw.CancellationPending = True Then
+            'do nothing
+        Else
+            Dim connSftpTestPassed As Boolean = False
+            Dim connSftpTestAttempts As Integer = 1
+
+            If My.Computer.FileSystem.FileExists(My.Application.Info.DirectoryPath + "\settings.xml") = False Then
+                'if settings doesn't exist, then run initial setup
+
+                bw.ReportProgress(5, "Preparing for first-time use...")
+
+                Do
+                    bw.ReportProgress(10, "Verifying SFTP connection to website...")
+
+                    'test ftp settings 
+                    connSftpTestPassed = utilsSftp.testSftpConnection(appSettings.GetSetting("ftpServer"),
+                                                                appSettings.GetSetting("ftpServerPort"),
+                                                                appSettings.GetSetting("ftpUsername"),
+                                                                appSettings.GetSetting("ftpPassword"),
+                                                                appSettings.GetSetting("sshKey")
+                                                                )
+                    'connTestPassed = True 'USED FOR DEVELOPMENT PURPOSES
+
+                    If connSftpTestPassed = False And connSftpTestAttempts > 1 Then
+                        'if settings don't work, alert user, then prompt again
+                        MsgBox("Unable to connect to website. Please verify your login credentials.", _
+                               MsgBoxStyle.Critical, My.Application.Info.ProductName)
+                    End If
+
+                    If connSftpTestPassed = False Then
+                        ftp_dialog.Cancel_Button.Visible = False 'hide cancel button
+                        ftp_dialog.ShowDialog() 'get FTP settings
+
+                    ElseIf connSftpTestPassed = True Then
+                        bw.ReportProgress(20, "Verifying SFTP connection to website...done.")
+
+                    End If
+
+                    If connSftpTestAttempts >= 3 And connSftpTestPassed = False Then
+                        Exit Do 'exits loop if connection is not successful at least three times
+                    End If
+
+                    connSftpTestAttempts += 1
+                Loop While connSftpTestPassed = False
+
+
+            End If
+
+            Try
+                'STARTUP PROCESS 
+                'update store information, if unable report error, else continue
+                'get pos settings, if there are any
+
+
+                bw.ReportProgress(30, "Getting store information from website...") 'connect to ftp
+                getDataFromWebsite(True, "storeInfo")
+                bw.ReportProgress(40, "Getting store information from website...done.")
+
+                bw.ReportProgress(50, "Reading settings from file...")
+
+                'parse file
+
+                bw.ReportProgress(60, "Reading settings from file...done.")
+
+                bw.ReportProgress(70, "Updating store settings in BBIT POS...")
+
+                'save settings from file to xml file
+
+                bw.ReportProgress(80, "Updating store settings in BBIT POS...done.")
+
+                'CLOSING STEP DOES NOT NEED TO BE UPDATED, DONE IN bw_runworkercompleted
+                SplashScreen.Close()
+            Catch ex As Exception
+                Me.Close()
+            End Try
+        End If
+    End Sub
+
+    Private Sub bw_ProgressChanged(ByVal sender As Object, ByVal e As ProgressChangedEventArgs)
+        SplashScreen.startupStatusLabel.Text = e.ProgressPercentage.ToString() & "% - " & e.UserState
+    End Sub
+
+    Private Sub bw_RunWorkerCompleted(ByVal sender As Object, ByVal e As RunWorkerCompletedEventArgs)
+        If e.Cancelled = True Then
+            SplashScreen.startupStatusLabel.Text = "Canceled!"
+        ElseIf e.Error IsNot Nothing Then
+            SplashScreen.startupStatusLabel.Text = "Error: " & e.Error.Message
+        Else
+            If isFirstRun = True Then
+
+            End If
+            SplashScreen.startupStatusLabel.Text = "Opening register..."
+            SplashScreen.Close() 'close splash screen
+            utils.enableAllControls(Me) 're-enable form controls
+        End If
+    End Sub
+    'END OF BACKGROUND WORKER STUFF DONE ON STARTUP 
